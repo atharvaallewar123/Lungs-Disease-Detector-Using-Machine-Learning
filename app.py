@@ -1,105 +1,61 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Jun 11 22:34:20 2020
+#Import necessary libraries
+from flask import Flask, render_template, request
 
-@author: Krish Naik
-"""
-
-from __future__ import division, print_function
-# coding=utf-8
-import sys
-import os
-import glob
-import re
 import numpy as np
-import tensorflow as tf
-import tensorflow as tf
+import os
 
-from tensorflow.compat.v1 import ConfigProto
-from tensorflow.compat.v1 import InteractiveSession
+from keras.preprocessing.image import load_img
+from keras.preprocessing.image import img_to_array
+from keras.models import load_model
 
-config = ConfigProto()
-config.gpu_options.per_process_gpu_memory_fraction = 0.2
-config.gpu_options.allow_growth = True
-session = InteractiveSession(config=config)
-# Keras
-from tensorflow.keras.applications.resnet50 import preprocess_input
-from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing import image
+#load model
+model =load_model("model/sequential_cnn_model.h5")
 
-# Flask utils
-from flask import Flask, redirect, url_for, request, render_template
-from werkzeug.utils import secure_filename
-#from gevent.pywsgi import WSGIServer
+print('@@ Model loaded')
 
-# Define a flask app
+
+def pred_disease(lungs_Dis):
+    test_image = load_img(lungs_Dis, target_size = (150, 150)) # load image 
+    print("Got Image for prediction")
+   
+    test_image = img_to_array(test_image)/255 # convert image to np array and normalize
+    test_image = np.expand_dims(test_image, axis = 0) # change dimention 3D to 4D
+  
+    result = model.predict(test_image).round(3) # predict diseased palnt or not
+    print('Raw result = ', result)
+  
+    pred = np.argmax(result) # get the index of max value
+
+    if pred == 0:
+        return "No Disease Detected"  
+    else:
+        return  "Pneumonia Disease Detected"
+    
+
+# Create flask instance
 app = Flask(__name__)
 
-# Model saved with Keras model.save()
-MODEL_PATH ='model_resnet152V2.h5'
-
-# Load your trained model
-model = load_model(MODEL_PATH)
-
-
-
-
-def model_predict(img_path, model):
-    print(img_path)
-    img = image.load_img(img_path, target_size=(224, 224))
-
-    # Preprocessing the image
-    x = image.img_to_array(img)
-    # x = np.true_divide(x, 255)
-    ## Scaling
-    x=x/255
-    x = np.expand_dims(x, axis=0)
-   
-
-    # Be careful how your trained model deals with the input
-    # otherwise, it won't make correct prediction!
-   # x = preprocess_input(x)
-
-    preds = model.predict(x)
-    preds=np.argmax(preds, axis=1)
-    if preds==0:
-        preds="The leaf is diseased cotton leaf"
-    elif preds==1:
-        preds="The leaf is diseased cotton plant"
-    elif preds==2:
-        preds="The leaf is fresh cotton leaf"
-    else:
-        preds="The leaf is fresh cotton plant"
+# render index.html page
+@app.route("/", methods=['GET', 'POST'])
+def home():
+        return render_template('dropdown.html')
+    
+# get input image from client then predict class and render respective .html page for solution
+@app.route("/predict", methods = ['GET','POST'])
+def predict():
+     if request.method == 'POST':
+        file = request.files['image'] # fet input
+        filename = file.filename        
+        print("@@ Input posted = ", filename)
         
+        file_path = os.path.join('static/user uploaded', filename)
+        file.save(file_path)
+
+        print("@@ Predicting class......")
+        pred, output_page = pred_disease(lungs_Dis==file_path)
+              
+        return render_template(output_page, pred_output = pred, user_image = file_path)
     
-    
-    return preds
-
-
-@app.route('/', methods=['GET'])
-def index():
-    # Main page
-    return render_template('index.html')
-
-
-@app.route('/predict', methods=['GET', 'POST'])
-def upload():
-    if request.method == 'POST':
-        # Get the file from post request
-        f = request.files['file']
-
-        # Save the file to ./uploads
-        basepath = os.path.dirname(__file__)
-        file_path = os.path.join(
-            basepath, 'uploads', secure_filename(f.filename))
-        f.save(file_path)
-
-        # Make prediction
-        preds = model_predict(file_path, model)
-        result=preds
-        return result
-    return None
-
-
-if __name__ == '__main__':
-    app.run(port=5001,debug=True)
+# For local system & cloud
+if __name__ == "__main__":
+    app.run(threaded=False,) 
